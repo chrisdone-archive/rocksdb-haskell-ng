@@ -229,8 +229,8 @@ open = do
                         Rocks.close dbh))))
         shouldBe result (Right () :: Either String ()))
 
-#if !defined(mingw32_HOST_OS)
 obscure :: Spec
+#if !defined(mingw32_HOST_OS)
 obscure =
   it
     "Weird global singleton string matching stuff for double-locking warnings"
@@ -261,6 +261,8 @@ obscure =
                         Rocks.close dbh'
                         Rocks.close dbh))))
         shouldBe result (Left () :: Either () ()))
+#else
+obscure = pure ()
 #endif
 
 ----------------------------------------------------------------------
