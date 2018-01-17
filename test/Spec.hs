@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -22,6 +23,7 @@ spec :: Spec
 spec = do
   describe "Open/create/close" open
   describe "Get/put" getput
+  describe "Obscure conditions" obscure
 
 getput :: Spec
 getput = do
@@ -206,6 +208,43 @@ open = do
                         Rocks.close dbh
                         Rocks.close dbh))))
         shouldBe result (Right () :: Either String ()))
+
+#if !defined(mingw32_HOST_OS)
+obscure :: Spec
+obscure =
+  it
+    "Weird global singleton string matching stuff for double-locking warnings"
+    -- This test will fail when RocksDB fixes this issue
+    -- (see https://stackoverflow.com/questions/37310588/rocksdb-io-error-lock-no-locks-available#comment83145041_37312033).
+    -- It exists so that we get notified when that fixing happens.
+    (do result <-
+          fmap
+            (second (const ()) .
+             first (const () :: Rocks.RocksDBException -> ()))
+            (liftIO
+               (try
+                  (withTempDirCleanedUp
+                     (\dir -> do
+                        dbh <-
+                          Rocks.open
+                            (Rocks.OpenConfig
+                             { Rocks.openConfigFilePath = dir </> "demo.db"
+                             , Rocks.openConfigCreateIfMissing = False
+                             })
+                        removeDirectoryRecursive dir
+                        dbh' <-
+                          Rocks.open
+                            (Rocks.OpenConfig
+                             { Rocks.openConfigFilePath = dir </> "demo.db"
+                             , Rocks.openConfigCreateIfMissing = False
+                             })
+                        Rocks.close dbh'
+                        Rocks.close dbh))))
+        shouldBe result (Left () :: Either () ()))
+#endif
+
+----------------------------------------------------------------------
+-- Helpers
 
 -- | Run the action with a temporary directory, force the result, remove the directory.
 withTempDirCleanedUp :: NFData a => (FilePath -> IO a) -> IO a
