@@ -34,13 +34,13 @@ data OpenConfig = OpenConfig
 -- | A handle to a RocksDB database. When handle becomes out of reach,
 -- the database is closed.
 data DBH = DBH
-  { dbhRef :: MVar (Maybe (ForeignPtr DB))
+  { dbhRef :: !(MVar (Maybe (ForeignPtr DB)))
   }
 
 -- | An exception thrown by this module.
 data RocksDBException
-  = UnsuccessfulOperation String String
-  | AllocationReturnedNull String
+  = UnsuccessfulOperation !String !String
+  | AllocationReturnedNull !String
   deriving (Typeable, Show)
 instance Exception RocksDBException
 
