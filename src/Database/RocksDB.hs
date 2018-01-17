@@ -154,9 +154,12 @@ get dbh key =
                         then return Nothing
                     -- Below: we as callers of the rocksDB C library
                     -- own the malloc'd string and we are supposed to
-                    -- free it ourselves. S.unsafeUseAsCStringLen
-                    -- re-uses with no copying the C array and adds a
-                    -- free() finalizer.
+                    -- free it ourselves.
+                    --
+                    -- See facebook's example https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53
+                    --
+                    -- S.unsafeUseAsCStringLen re-uses with no copying
+                    -- the C array and adds a free() finalizer.
                         else fmap
                                Just
                                (S.unsafePackMallocCStringLen
