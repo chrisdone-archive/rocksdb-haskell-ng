@@ -15,6 +15,7 @@ import           System.Directory
 import           System.FilePath
 import           System.IO.Temp
 import           Test.Hspec
+import           Test.QuickCheck
 
 main :: IO ()
 main = hspec spec
@@ -160,6 +161,25 @@ open = do
                           Rocks.open
                             (Rocks.OpenConfig
                              { Rocks.openConfigFilePath = dir </> "demo.db"
+                             , Rocks.openConfigCreateIfMissing = True
+                             })
+                        Rocks.close dbh))))
+        shouldBe result (Right () :: Either String ()))
+  it
+    "Open (unicode filename)"
+    (do result <-
+          fmap
+            (second (const ()) .
+             first (show :: Rocks.RocksDBException -> String))
+            (liftIO
+               (try
+                  (withTempDirCleanedUp
+                     (\dir -> do
+                        unicode <- getUnicodeString <$> liftIO (generate arbitrary)
+                        dbh <-
+                          Rocks.open
+                            (Rocks.OpenConfig
+                             { Rocks.openConfigFilePath = dir </> unicode
                              , Rocks.openConfigCreateIfMissing = True
                              })
                         Rocks.close dbh))))
