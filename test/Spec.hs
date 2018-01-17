@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | Comprehensive aggressive test-suite.
 
 module Main where
@@ -19,6 +21,83 @@ main = hspec spec
 spec :: Spec
 spec = do
   describe "Open/create/close" open
+  describe "Get/put" getput
+
+getput :: Spec
+getput = do
+  it
+    "Get/put succeeds"
+    (do let key = "some key"
+            val = "Hello, World!"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   (Rocks.OpenConfig
+                    { Rocks.openConfigFilePath = dir </> "demo.db"
+                    , Rocks.openConfigCreateIfMissing = True
+                    })
+               Rocks.put dbh key val
+               v <- Rocks.get dbh key
+               Rocks.close dbh
+               pure v)
+        shouldBe result (Just val))
+  it
+    "Overwrite key works"
+    (do let key = "some key"
+            val = "Hello, World!"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   (Rocks.OpenConfig
+                    { Rocks.openConfigFilePath = dir </> "demo.db"
+                    , Rocks.openConfigCreateIfMissing = True
+                    })
+               Rocks.put dbh key "doomed"
+               Rocks.put dbh key val
+               v <- Rocks.get dbh key
+               Rocks.close dbh
+               pure v)
+        shouldBe result (Just val))
+  it
+    "Non-existent key returns Nothing"
+    (do let key = "some key"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   (Rocks.OpenConfig
+                    { Rocks.openConfigFilePath = dir </> "demo.db"
+                    , Rocks.openConfigCreateIfMissing = True
+                    })
+               v <- Rocks.get dbh key
+               Rocks.close dbh
+               pure v)
+        shouldBe result Nothing)
+  it
+    "Put/get on closed DB should fail"
+    (do result <-
+          fmap
+            (second (const ()) .
+             first (const () :: Rocks.RocksDBException -> ()))
+            (liftIO
+               (try
+                  (withTempDirCleanedUp
+                     (\dir -> do
+                        dbh <-
+                          Rocks.open
+                            (Rocks.OpenConfig
+                             { Rocks.openConfigFilePath = dir </> "demo.db"
+                             , Rocks.openConfigCreateIfMissing = False
+                             })
+                        Rocks.close dbh
+                        Rocks.put dbh "foo" "foo"
+                        Rocks.get dbh "foo"))))
+        shouldBe result (Left () :: Either () ()))
 
 open :: Spec
 open = do

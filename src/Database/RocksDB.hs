@@ -9,17 +9,21 @@ module Database.RocksDB
   ( open
   , OpenConfig(..)
   , close
+  , put
+  , get
     -- * Types
   , DBH
   , RocksDBException(..)
   ) where
 
-import Control.Concurrent
-import Control.Exception
-import Data.Coerce
-import Data.Typeable
-import Foreign
-import Foreign.C
+import           Control.Concurrent
+import           Control.Exception
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Unsafe as S
+import           Data.Coerce
+import           Data.Typeable
+import           Foreign
+import           Foreign.C
 
 --------------------------------------------------------------------------------
 -- Publicly-exposed types
@@ -34,13 +38,14 @@ data OpenConfig = OpenConfig
 -- | A handle to a RocksDB database. When handle becomes out of reach,
 -- the database is closed.
 data DBH = DBH
-  { dbhRef :: !(MVar (Maybe (ForeignPtr DB)))
+  { dbhVar :: !(MVar (Maybe (ForeignPtr DB)))
   }
 
 -- | An exception thrown by this module.
 data RocksDBException
   = UnsuccessfulOperation !String !String
   | AllocationReturnedNull !String
+  | DatabaseIsClosed !String
   deriving (Typeable, Show)
 instance Exception RocksDBException
 
@@ -59,17 +64,15 @@ open config = do
     (openConfigFilePath config)
     (\pathPtr ->
        withOptions
-         (\optionsPtr -> do
+         (\optsPtr -> do
             c_rocksdb_options_set_create_if_missing
-              optionsPtr
+              optsPtr
               (openConfigCreateIfMissing config)
             dbhPtr <-
-              assertNotError
-                "c_rocksdb_open"
-                (c_rocksdb_open optionsPtr pathPtr)
+              assertNotError "c_rocksdb_open" (c_rocksdb_open optsPtr pathPtr)
             dbhFptr <- newForeignPtr c_rocksdb_close_funptr dbhPtr
-            ptrRef <- newMVar (Just dbhFptr)
-            pure (DBH {dbhRef = ptrRef})))
+            dbRef <- newMVar (Just dbhFptr)
+            pure (DBH {dbhVar = dbRef})))
 
 -- | Close a database.
 --
@@ -84,9 +87,12 @@ open config = do
 close :: DBH -> IO ()
 close dbh =
   modifyMVar_
-    (dbhRef dbh)
+    (dbhVar dbh)
     (\mfptr -> do
-       maybe (return ()) finalizeForeignPtr mfptr
+       maybe
+         (return ())
+         finalizeForeignPtr
+         mfptr
        -- Previous line: The fptr would be finalized _eventually_, so
        -- no memory leaks. But calling @close@ indicates you want to
        -- release the resources right now.
@@ -95,14 +101,97 @@ close dbh =
        -- so you can't double-free.
        pure Nothing)
 
+-- | Put a @value@ at @key@.
+put :: DBH -> ByteString -> ByteString -> IO ()
+put dbh key value =
+  withDBPtr
+    dbh
+    "put"
+    (\dbPtr ->
+       S.unsafeUseAsCStringLen
+         key
+         (\(key_ptr, klen) ->
+            S.unsafeUseAsCStringLen
+              value
+              (\(val_ptr, vlen) ->
+                 withWriteOptions
+                   (\optsPtr ->
+                      assertNotError
+                        "put"
+                        (c_rocksdb_put
+                           dbPtr
+                           optsPtr
+                           key_ptr
+                           (fromIntegral klen)
+                           val_ptr
+                           (fromIntegral vlen))))))
+
+-- | Get a value at @key@.
+get :: DBH -> ByteString -> IO (Maybe ByteString)
+get dbh key =
+  withDBPtr
+    dbh
+    "get"
+    (\dbPtr ->
+       S.unsafeUseAsCStringLen
+         key
+         (\(key_ptr, klen) ->
+            alloca
+              (\vlen_ptr ->
+                 withReadOptions
+                   (\optsPtr -> do
+                      val_ptr <-
+                        assertNotError
+                          "get"
+                          (c_rocksdb_get
+                             dbPtr
+                             optsPtr
+                             key_ptr
+                             (fromIntegral klen)
+                             vlen_ptr)
+                      vlen <- peek vlen_ptr
+                      if val_ptr == nullPtr
+                        then return Nothing
+                    -- Below: we as callers of the rocksDB C library
+                    -- own the malloc'd string and we are supposed to
+                    -- free it ourselves. S.unsafeUseAsCStringLen
+                    -- re-uses with no copying the C array and adds a
+                    -- free() finalizer.
+                        else fmap
+                               Just
+                               (S.unsafePackMallocCStringLen
+                                  (val_ptr, fromIntegral vlen))))))
+
 --------------------------------------------------------------------------------
 -- Internal functions
+
+-- | Do something with the pointer inside. This is thread-safe.
+withDBPtr :: DBH -> String -> (Ptr DB -> IO a) -> IO a
+withDBPtr dbh label f =
+  withMVar
+    (dbhVar dbh)
+    (\mfptr ->
+       case mfptr of
+         Nothing -> throwIO (DatabaseIsClosed label)
+         Just db -> withForeignPtr db f)
 
 withOptions :: (Ptr Options -> IO a) -> IO a
 withOptions =
   bracket
     (assertNotNull "c_rocksdb_options_create" c_rocksdb_options_create)
     c_rocksdb_options_destroy
+
+withWriteOptions :: (Ptr WriteOptions -> IO a) -> IO a
+withWriteOptions =
+  bracket
+    (assertNotNull "c_rocksdb_writeoptions_create" c_rocksdb_writeoptions_create)
+    c_rocksdb_writeoptions_destroy
+
+withReadOptions :: (Ptr ReadOptions -> IO a) -> IO a
+withReadOptions =
+  bracket
+    (assertNotNull "c_rocksdb_readoptions_create" c_rocksdb_readoptions_create)
+    c_rocksdb_readoptions_destroy
 
 --------------------------------------------------------------------------------
 -- Correctness checks for foreign functions
@@ -116,7 +205,7 @@ assertNotNull label m = do
     else pure val
 
 -- | Check that the RETCODE is successful.
-assertNotError :: (Coercible a (Ptr ())) => String -> (Ptr CString -> IO a) -> IO a
+assertNotError :: String -> (Ptr CString -> IO a) -> IO a
 assertNotError label f =
   alloca
     (\errorPtr -> do
@@ -133,6 +222,8 @@ assertNotError label f =
 -- Foreign (unsafe) bindings
 
 data Options
+data WriteOptions
+data ReadOptions
 data DB
 
 foreign import ccall safe "rocksdb/c.h rocksdb_options_create"
@@ -147,5 +238,33 @@ foreign import ccall safe "rocksdb/c.h rocksdb_options_set_create_if_missing"
 foreign import ccall safe "rocksdb/c.h rocksdb_open"
   c_rocksdb_open :: Ptr Options -> CString -> Ptr CString -> IO (Ptr DB)
 
-foreign import ccall safe "rocksdb\\c.h &rocksdb_close"
+foreign import ccall safe "rocksdb/c.h &rocksdb_close"
   c_rocksdb_close_funptr :: FunPtr (Ptr DB -> IO ())
+
+foreign import ccall safe "rocksdb/c.h rocksdb_put"
+  c_rocksdb_put :: Ptr DB
+                -> Ptr WriteOptions
+                -> CString -> CSize
+                -> CString -> CSize
+                -> Ptr CString
+                -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_get"
+  c_rocksdb_get :: Ptr DB
+                -> Ptr ReadOptions
+                -> CString -> CSize
+                -> Ptr CSize -- ^ Output length.
+                -> Ptr CString
+                -> IO CString
+
+foreign import ccall safe "rocksdb/c.h rocksdb_writeoptions_create"
+  c_rocksdb_writeoptions_create :: IO (Ptr WriteOptions)
+
+foreign import ccall safe "rocksdb/c.h rocksdb_writeoptions_destroy"
+  c_rocksdb_writeoptions_destroy :: Ptr WriteOptions -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_readoptions_create"
+  c_rocksdb_readoptions_create :: IO (Ptr ReadOptions)
+
+foreign import ccall safe "rocksdb/c.h rocksdb_readoptions_destroy"
+  c_rocksdb_readoptions_destroy :: Ptr ReadOptions -> IO ()

@@ -10,6 +10,7 @@ library
   extra-libraries:     rocksdb
   exposed-modules:     Database.RocksDB
   build-depends:       base >= 4.7 && < 5
+                     , bytestring
 
 test-suite test
   type:                exitcode-stdio-1.0
