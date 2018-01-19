@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -18,12 +19,16 @@ module Database.RocksDB
 
 import           Control.Concurrent
 import           Control.Exception
+import           Control.Monad
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Unsafe as S
 import           Data.Coerce
 import           Data.Typeable
 import           Foreign
 import           Foreign.C
+import qualified GHC.Foreign as GHC
+import qualified GHC.IO.Encoding as GHC
+import           System.Directory
 
 --------------------------------------------------------------------------------
 -- Publicly-exposed types
@@ -58,9 +63,17 @@ instance Exception RocksDBException
 --
 -- The database will be closed when the 'DBH' is garbage collected or
 -- when 'close' is called on it.
+--
+-- With LC_ALL=C, two things happen:
+--   * rocksdb can't open a database with unicode in path;
+--   * rocksdb can't create a folder properly.
+--
+-- So, we create the folder by ourselves, and for that we
+-- need to set the encoding we're going to use. On Linux
+-- it's almost always UTC-8.
 open :: OpenConfig -> IO DBH
 open config = do
-  withCString
+  withFilePath
     (openConfigFilePath config)
     (\pathPtr ->
        withOptions
@@ -69,7 +82,20 @@ open config = do
               optsPtr
               (openConfigCreateIfMissing config)
             dbhPtr <-
-              assertNotError "c_rocksdb_open" (c_rocksdb_open optsPtr pathPtr)
+              bracket
+                (replaceEncoding config)
+                restoreEncoding
+                (const
+                   (do when
+                         (openConfigCreateIfMissing config)
+                         (createDirectoryIfMissing
+                            True
+                            (openConfigFilePath config))
+                       v <-
+                         assertNotError
+                           "c_rocksdb_open"
+                           (c_rocksdb_open optsPtr pathPtr)
+                       pure v))
             dbhFptr <- newForeignPtr c_rocksdb_close_funptr dbhPtr
             dbRef <- newMVar (Just dbhFptr)
             pure (DBH {dbhVar = dbRef})))
@@ -195,6 +221,30 @@ withReadOptions =
   bracket
     (assertNotNull "c_rocksdb_readoptions_create" c_rocksdb_readoptions_create)
     c_rocksdb_readoptions_destroy
+
+replaceEncoding :: OpenConfig -> IO GHC.TextEncoding
+#ifdef mingw32_HOST_OS
+replaceEncoding _ = GHC.getFileSystemEncoding
+#else
+replaceEncoding opts = do
+  oldenc <- GHC.getFileSystemEncoding
+  when (openConfigCreateIfMissing opts) (GHC.setFileSystemEncoding GHC.utf8)
+  pure oldenc
+#endif
+
+restoreEncoding :: GHC.TextEncoding -> IO ()
+#ifdef mingw32_HOST_OS
+restoreEncoding _ = pure ()
+#else
+restoreEncoding = GHC.setFileSystemEncoding
+#endif
+
+withFilePath :: FilePath -> (CString -> IO a) -> IO a
+# ifdef mingw32_HOST_OS
+withFilePath = withCString
+# else
+withFilePath = GHC.withCString GHC.utf8
+# endif
 
 --------------------------------------------------------------------------------
 -- Correctness checks for foreign functions
