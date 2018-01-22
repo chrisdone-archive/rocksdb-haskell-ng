@@ -48,7 +48,9 @@ import           Data.IORef
 import           Data.Typeable
 import           Foreign
 import           Foreign.C
+#ifndef mingw32_HOST_OS
 import qualified GHC.Foreign as GHC
+#endif
 import qualified GHC.IO.Encoding as GHC
 import           System.Directory
 
