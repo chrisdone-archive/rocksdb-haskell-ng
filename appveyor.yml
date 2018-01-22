@@ -15,10 +15,10 @@ before_test:
 - xcopy /q /s /e /r /k /i /v /h /y "%APPVEYOR_BUILD_FOLDER%" "%WORK_DIR%"
 - cd "%WORK_DIR%"
 
--# Install openssl
--- ps: Install-Package RocksDbNative # -Version 5.4.6.10
--- ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
--- ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
+# Install openssl
+- ps: Install-Package RocksDbNative # -Version 5.4.6.10
+- ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
+- ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
 
 # Install stack
 - ps: Start-FileDownload http://www.stackage.org/stack/windows-x86_64 -FileName stack.zip
