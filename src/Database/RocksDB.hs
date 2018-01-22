@@ -80,15 +80,22 @@ data DB = DB
   { dbVar :: !(MVar (Maybe (ForeignPtr CDB)))
   }
 
+-- | A handle to a RocksDB iterator. When handle becomes out of reach,
+-- the iterator is destroyed.
+data Iterator = Iterator
+  { iteratorDB :: !DB
+  , iteratorVar :: !(MVar (Maybe (ForeignPtr CIterator)))
+  }
+
 -- | An exception thrown by this module.
 data RocksDBException
   = UnsuccessfulOperation !String !String
   | AllocationReturnedNull !String
   | DatabaseIsClosed !String
+  | IteratorIsClosed !String
+  | IteratorIsInvalid !String
   deriving (Typeable, Show)
 instance Exception RocksDBException
-
-data Iterator
 
 --------------------------------------------------------------------------------
 -- Defaults
@@ -254,20 +261,7 @@ get dbh readOpts key =
                                 (fromIntegral klen)
                                 vlen_ptr)
                          vlen <- peek vlen_ptr
-                         if val_ptr == nullPtr
-                           then return Nothing
-                            -- Below: we as callers of the rocksDB C library
-                            -- own the malloc'd string and we are supposed to
-                            -- free it ourselves.
-                            --
-                            -- See facebook's example https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53
-                            --
-                            -- S.unsafeUseAsCStringLen re-uses with no copying
-                            -- the C array and adds a free() finalizer.
-                           else fmap
-                                  Just
-                                  (S.unsafePackMallocCStringLen
-                                     (val_ptr, fromIntegral vlen)))))))
+                         adoptByteStringMaybe val_ptr vlen)))))
 
 -- | Write a batch of operations atomically.
 write :: MonadIO m => DB -> WriteOptions -> [BatchOp] -> m ()
@@ -307,23 +301,108 @@ write dbh opts batch =
       touchForeignPtr p'
     touch (Del (PS p _ _)) = touchForeignPtr p
 
+-- | Create an iterator on the DB. If the DB is closed the iterator's functions
+--  will throw an exception.
 createIter :: MonadIO m => DB -> ReadOptions -> m Iterator
-createIter = undefined
+createIter db opts =
+  liftIO
+    (withDBPtr
+       db
+       "createIter"
+       (\dbPtr ->
+          withReadOptions
+            opts
+            (\readOpts -> do
+               iterPtr <-
+                 assertNotNull
+                   "c_rocksdb_create_iterator"
+                   (c_rocksdb_create_iterator dbPtr readOpts)
+               iterhFptr <- newForeignPtr c_rocksdb_iter_destroy_ptr iterPtr
+               var <- newMVar (Just iterhFptr)
+               pure (Iterator {iteratorDB = db, iteratorVar = var}))))
 
+-- | Destroy an iterator.
+--
+-- * Calling this function twice has no ill-effects.
+--
+-- * You don't have to call this; if you no longer hold a reference to
+--   the @Iterator@ then it will be closed upon garbage collection. But you
+--   can call this function to do it early.
+--
+-- * Further operations will throw an exception on a closed @Iterator@.
 releaseIter :: MonadIO m => Iterator -> m ()
-releaseIter = undefined
+releaseIter iterator =
+  liftIO
+    (modifyMVar_
+       (iteratorVar iterator)
+       (\mfptr -> do
+          maybe (return ()) finalizeForeignPtr mfptr
+          -- Previous line: The fptr would be finalized _eventually_, so
+          -- no memory leaks. But calling @releaseIter@ indicates you want to
+          -- release the resources right now.
+          --
+          -- Also, a foreign pointer's finalizer is ran and then deleted,
+          -- so you can't double-free.
+          pure Nothing))
 
 iterSeek :: MonadIO m => Iterator -> ByteString -> m ()
-iterSeek = undefined
+iterSeek iter key =
+  withIterPtr
+    iter
+    "iterSeek"
+    (\iterPtr ->
+       S.unsafeUseAsCStringLen
+         key
+         (\(key_ptr, klen) ->
+            c_rocksdb_iter_seek iterPtr key_ptr (fromIntegral klen)))
 
 iterEntry :: MonadIO m => Iterator -> m (Maybe (ByteString, ByteString))
-iterEntry = undefined
+iterEntry iter =
+  withIterPtr
+    iter
+    "iterEntry"
+    (\iterPtr -> do
+       mkey <-
+         alloca
+           (\klenp -> do
+              key <- c_rocksdb_iter_key iterPtr klenp
+              klen <- peek klenp
+              adoptByteStringMaybe key klen)
+       mval <-
+         alloca
+           (\vlenp -> do
+              val <- c_rocksdb_iter_value iterPtr vlenp
+              vlen <- peek vlenp
+              adoptByteStringMaybe val vlen)
+       pure ((,) <$> mkey <*> mval))
 
 iterNext :: MonadIO m => Iterator -> m ()
-iterNext = undefined
+iterNext iter =
+  withIterPtr iter "iterNext" (\iterPtr -> c_rocksdb_iter_next iterPtr)
 
 --------------------------------------------------------------------------------
 -- Internal functions
+
+withIterPtr :: MonadIO m => Iterator -> String -> (Ptr CIterator -> IO a) -> m a
+withIterPtr iter label f =
+  liftIO
+    (withDBPtr
+       (iteratorDB iter)
+       label
+       (const
+          (withMVar
+             (iteratorVar iter)
+             (\mfptr ->
+                case mfptr of
+                  Nothing -> throwIO (IteratorIsClosed label)
+                  Just db ->
+                    withForeignPtr
+                      db
+                      (\ptr -> do
+                         valid <- c_rocksdb_iter_valid ptr
+                         if valid
+                           then f ptr
+                           else throwIO (IteratorIsInvalid label))))))
 
 -- | Do something with the pointer inside. This is thread-safe.
 withDBPtr :: DB -> String -> (Ptr CDB -> IO a) -> IO a
@@ -383,6 +462,24 @@ withFilePath = withCString
 withFilePath = GHC.withCString GHC.utf8
 # endif
 
+-- | Adopt ownership of the string given to us by the C library.
+--
+-- Below: we as callers of the rocksDB C library
+-- own the malloc'd string and we are supposed to
+-- free it ourselves.
+--
+-- See facebook's example https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53
+--
+-- S.unsafeUseAsCStringLen re-uses with no copying
+-- the C array and adds a free() finalizer.
+--
+-- If the string is NULL, just return Nothing.
+adoptByteStringMaybe :: CString -> CSize -> IO (Maybe ByteString)
+adoptByteStringMaybe val_ptr vlen =
+  if val_ptr == nullPtr
+    then return Nothing
+    else fmap Just (S.unsafePackMallocCStringLen (val_ptr, fromIntegral vlen))
+
 --------------------------------------------------------------------------------
 -- Correctness checks for foreign functions
 
@@ -416,6 +513,7 @@ data CWriteOptions
 data CWriteBatch
 data CReadOptions
 data CDB
+data CIterator
 
 foreign import ccall safe "rocksdb/c.h rocksdb_options_create"
   c_rocksdb_options_create :: IO (Ptr COptions)
@@ -488,3 +586,25 @@ foreign import ccall safe "rocksdb/c.h rocksdb_delete"
                    -> CString -> CSize
                    -> Ptr CString
                    -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_create_iterator"
+               c_rocksdb_create_iterator ::
+               Ptr CDB -> Ptr CReadOptions -> IO (Ptr CIterator)
+
+foreign import ccall safe "rocksdb/c.h &rocksdb_iter_destroy"
+  c_rocksdb_iter_destroy_ptr :: FunPtr (Ptr CIterator -> IO ())
+
+foreign import ccall safe "rocksdb/c.h rocksdb_iter_valid"
+  c_rocksdb_iter_valid :: Ptr CIterator -> IO Bool
+
+foreign import ccall safe "rocksdb/c.h rocksdb_iter_seek"
+  c_rocksdb_iter_seek :: Ptr CIterator -> CString -> CSize -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_iter_next"
+  c_rocksdb_iter_next :: Ptr CIterator -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_iter_key"
+  c_rocksdb_iter_key :: Ptr CIterator -> Ptr CSize -> IO CString
+
+foreign import ccall safe "rocksdb/c.h rocksdb_iter_value"
+  c_rocksdb_iter_value :: Ptr CIterator -> Ptr CSize -> IO CString
