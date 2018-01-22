@@ -129,6 +129,21 @@ iterators = do
                (Rocks.close dbh)))
        (== Rocks.IteratorIsClosed "iterEntry"))
   it
+    "Used iterator after release (alternative)"
+    (shouldThrow
+       (withTempDirCleanedUp
+          (\dir -> do
+             dbh <-
+               Rocks.open
+                 ((Rocks.defaultOptions (dir </> "demo.db"))
+                  {Rocks.optionsCreateIfMissing = True})
+             finally
+               (do iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+                   Rocks.releaseIter iterator
+                   Rocks.iterSeek iterator "k")
+               (Rocks.close dbh)))
+       (== Rocks.IteratorIsClosed "iterSeek"))
+  it
     "Valid iterator release"
     (do r <-
           withTempDirCleanedUp
@@ -154,6 +169,55 @@ iterators = do
                Rocks.close dbh)
         shouldBe r ())
   it
+    "Iterator next/next/next no problem"
+    (do let vals = [("k1", "foo"), ("k2", "bar")]
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.write
+                 dbh
+                 Rocks.defaultWriteOptions
+                 (map (uncurry Rocks.Put) vals)
+               iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+               Rocks.iterNext iterator
+               Rocks.iterNext iterator
+               Rocks.iterNext iterator
+               Rocks.releaseIter iterator
+               Rocks.close dbh
+               pure ())
+        shouldBe result ())
+  it
+    "Iterator without seek"
+    (do let vals = [("k1", "foo"), ("k2", "bar")]
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.write
+                 dbh
+                 Rocks.defaultWriteOptions
+                 (map (uncurry Rocks.Put) vals)
+               iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+               let loop = do
+                     mv <- Rocks.iterEntry iterator
+                     case mv of
+                       Just v -> do
+                         Rocks.iterNext iterator
+                         fmap (v :) loop
+                       Nothing -> pure []
+               vs <- loop
+               Rocks.releaseIter iterator
+               Rocks.close dbh
+               pure vs)
+        shouldBe result [])
+  it
     "Iterator after batch"
     (do let vals = [("k1", "foo"), ("k2", "bar")]
         result <-
@@ -168,7 +232,7 @@ iterators = do
                  Rocks.defaultWriteOptions
                  (map (uncurry Rocks.Put) vals)
                iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
-               Rocks.iterSeek iterator "k1"
+               Rocks.iterSeek iterator "k"
                let loop = do
                      mv <- Rocks.iterEntry iterator
                      case mv of
