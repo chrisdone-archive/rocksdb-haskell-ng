@@ -15,9 +15,10 @@ before_test:
 - xcopy /q /s /e /r /k /i /v /h /y "%APPVEYOR_BUILD_FOLDER%" "%WORK_DIR%"
 - cd "%WORK_DIR%"
 
-# Install OpenSSL 1.0.2 (see https://github.com/appveyor/ci/issues/1665)
-- ps: (New-Object Net.WebClient).DownloadFile('https://slproweb.com/download/Win64OpenSSL-1_0_2n.exe', "$($env:USERPROFILE)\Win64OpenSSL.exe")
-- ps: cmd /c start /wait "$($env:USERPROFILE)\Win64OpenSSL.exe" /silent /verysilent /sp- /suppressmsgboxes /DIR=C:\OpenSSL-Win64-v102
+-# Install openssl
+-- ps: Install-Package RocksDbNative # -Version 5.4.6.10
+-- ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
+-- ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
 
 # Install stack
 - ps: Start-FileDownload http://www.stackage.org/stack/windows-x86_64 -FileName stack.zip
