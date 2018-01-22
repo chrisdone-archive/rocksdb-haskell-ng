@@ -37,12 +37,10 @@ getput = do
             (\dir -> do
                dbh <-
                  Rocks.open
-                   (Rocks.OpenConfig
-                    { Rocks.openConfigFilePath = dir </> "demo.db"
-                    , Rocks.openConfigCreateIfMissing = True
-                    })
-               Rocks.put dbh key val
-               v <- Rocks.get dbh key
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.put dbh Rocks.defaultWriteOptions key val
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
                Rocks.close dbh
                pure v)
         shouldBe result (Just val))
@@ -55,13 +53,11 @@ getput = do
             (\dir -> do
                dbh <-
                  Rocks.open
-                   (Rocks.OpenConfig
-                    { Rocks.openConfigFilePath = dir </> "demo.db"
-                    , Rocks.openConfigCreateIfMissing = True
-                    })
-               Rocks.put dbh key "doomed"
-               Rocks.put dbh key val
-               v <- Rocks.get dbh key
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.put dbh Rocks.defaultWriteOptions key "doomed"
+               Rocks.put dbh Rocks.defaultWriteOptions key val
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
                Rocks.close dbh
                pure v)
         shouldBe result (Just val))
@@ -73,11 +69,9 @@ getput = do
             (\dir -> do
                dbh <-
                  Rocks.open
-                   (Rocks.OpenConfig
-                    { Rocks.openConfigFilePath = dir </> "demo.db"
-                    , Rocks.openConfigCreateIfMissing = True
-                    })
-               v <- Rocks.get dbh key
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
                Rocks.close dbh
                pure v)
         shouldBe result Nothing)
@@ -93,13 +87,11 @@ getput = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         Rocks.close dbh
-                        Rocks.put dbh "foo" "foo"
-                        Rocks.get dbh "foo"))))
+                        Rocks.put dbh Rocks.defaultWriteOptions "foo" "foo"
+                        Rocks.get dbh Rocks.defaultReadOptions "foo"))))
         shouldBe result (Left () :: Either () ()))
 
 open :: Spec
@@ -116,10 +108,8 @@ open = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         Rocks.close dbh))))
         shouldBe result (Left () :: Either () ()))
   it
@@ -134,16 +124,12 @@ open = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         dbh' <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         Rocks.close dbh'
                         Rocks.close dbh))))
         shouldBe result (Left () :: Either () ()))
@@ -159,10 +145,8 @@ open = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = True
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = True})
                         Rocks.close dbh))))
         shouldBe result (Right () :: Either String ()))
   it
@@ -175,13 +159,12 @@ open = do
                (try
                   (withTempDirCleanedUp
                      (\dir -> do
-                        unicode <- getUnicodeString <$> liftIO (generate arbitrary)
+                        unicode <-
+                          getUnicodeString <$> liftIO (generate arbitrary)
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> unicode
-                             , Rocks.openConfigCreateIfMissing = True
-                             })
+                            ((Rocks.defaultOptions (dir </> unicode))
+                             {Rocks.optionsCreateIfMissing = True})
                         Rocks.close dbh))))
         shouldBe result (Right () :: Either String ()))
   it
@@ -196,17 +179,13 @@ open = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = True
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = True})
                         Rocks.close dbh
                         dbh' <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = True
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = True})
                         Rocks.close dbh'))))
         shouldBe result (Right () :: Either String ()))
   it
@@ -221,10 +200,8 @@ open = do
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = True
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = True})
                         Rocks.close dbh
                         Rocks.close dbh))))
         shouldBe result (Right () :: Either String ()))
@@ -247,17 +224,13 @@ obscure =
                      (\dir -> do
                         dbh <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         removeDirectoryRecursive dir
                         dbh' <-
                           Rocks.open
-                            (Rocks.OpenConfig
-                             { Rocks.openConfigFilePath = dir </> "demo.db"
-                             , Rocks.openConfigCreateIfMissing = False
-                             })
+                            ((Rocks.defaultOptions (dir </> "demo.db"))
+                             {Rocks.optionsCreateIfMissing = False})
                         Rocks.close dbh'
                         Rocks.close dbh))))
         shouldBe result (Left () :: Either () ()))
