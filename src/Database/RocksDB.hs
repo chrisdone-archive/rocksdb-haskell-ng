@@ -349,10 +349,12 @@ releaseIter iterator =
     (withDBPtr
        (iteratorDB iterator)
        "releaseIter"
-       (const (liftIO
-                 (uninterruptibleMask_
-                    (do mptr <- atomicModifyIORef' (iteratorRef iterator) (Nothing, )
-                        maybe (pure ()) c_rocksdb_iter_destroy mptr)))))
+       (const
+          (liftIO
+             (uninterruptibleMask_
+                (do mptr <-
+                      atomicModifyIORef' (iteratorRef iterator) (Nothing, )
+                    maybe (pure ()) c_rocksdb_iter_destroy mptr)))))
 
 iterSeek :: MonadIO m => Iterator -> ByteString -> m ()
 iterSeek iter key =
