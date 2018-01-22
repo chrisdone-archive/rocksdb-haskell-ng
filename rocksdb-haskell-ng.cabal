@@ -27,3 +27,19 @@ test-suite test
                      , deepseq
   ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
+
+benchmark speed
+  hs-source-dirs:      bench
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , rocksdb-haskell-ng
+                     , criterion
+                     , hspec
+                     , QuickCheck
+                     , temporary
+                     , directory
+                     , filepath
+                     , deepseq
+  default-language:    Haskell2010
