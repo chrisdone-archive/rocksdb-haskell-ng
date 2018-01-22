@@ -16,7 +16,6 @@ before_test:
 - cd "%WORK_DIR%"
 
 # Install openssl
-- ps: Install-Package RocksDbNative # -Version 5.4.6.10
 - ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
 - ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
 
@@ -36,7 +35,7 @@ before_test:
 test_script:
   - cd "%WORK_DIR%"
   - stack --verbosity warn setup --no-reinstall > nul
-  - scripts\ci\appveyor-retry call stack test
+  - stack test
       -j 2
       --no-terminal
       --local-bin-path %SYSTEMROOT%\system32
