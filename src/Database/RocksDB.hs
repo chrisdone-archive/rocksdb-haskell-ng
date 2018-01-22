@@ -62,7 +62,7 @@ data Compression
   = NoCompression
   | SnappyCompression
   | ZlibCompression
-  deriving (Eq, Show, Enum, Bounded)
+  deriving (Enum, Bounded, Show)
 
 data WriteOptions = WriteOptions {}
 
@@ -72,7 +72,6 @@ data ReadOptions = ReadOptions {}
 data BatchOp
   = Put !ByteString !ByteString
   | Del !ByteString
-  deriving (Eq, Show)
 
 -- | A handle to a RocksDB database. When handle becomes out of reach,
 -- the database is closed.
@@ -180,7 +179,7 @@ close dbh =
     (modifyMVar_
        (dbVar dbh)
        (\mfptr -> do
-          maybe (return ()) finalizeForeignPtr mfptr
+          maybe (evaluate ()) finalizeForeignPtr mfptr
           -- Previous line: The fptr would be finalized _eventually_, so
           -- no memory leaks. But calling @close@ indicates you want to
           -- release the resources right now.

@@ -24,8 +24,81 @@ spec :: Spec
 spec = do
   describe "Open/create/close" open
   describe "Get/put" getput
+  describe "Batch write" batch
+  describe "Delete" delete
   describe "Compression" compression
+  describe "Iterators" iterators
   describe "Obscure conditions" obscure
+
+batch :: Spec
+batch = do
+  it
+    "Batch put"
+    (do let key = "some key"
+            val = "Hello, World!"
+            key2 = "some other key"
+            val2 = "Hello!"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.write
+                 dbh
+                 Rocks.defaultWriteOptions
+                 [Rocks.Put key val, Rocks.Put key2 val2]
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
+               v2 <- Rocks.get dbh Rocks.defaultReadOptions key2
+               Rocks.close dbh
+               pure (v, v2))
+        shouldBe result ((Just val, Just val2)))
+  it
+    "Batch put/del"
+    (do let key = "some key"
+            val = "Hello, World!"
+            key2 = "some other key"
+            val2 = "Hello!"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.write
+                 dbh
+                 Rocks.defaultWriteOptions
+                 [Rocks.Put key val, Rocks.Put key2 val2, Rocks.Del key]
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
+               v2 <- Rocks.get dbh Rocks.defaultReadOptions key2
+               Rocks.close dbh
+               pure (v, v2))
+        shouldBe result ((Nothing, Just val2)))
+
+delete :: Spec
+delete =
+  it
+    "Get/put/delete succeeds"
+    (do let key = "some key"
+            val = "Hello, World!"
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.put dbh Rocks.defaultWriteOptions key val
+               Rocks.delete dbh Rocks.defaultWriteOptions key
+               v <- Rocks.get dbh Rocks.defaultReadOptions key
+               Rocks.close dbh
+               pure v)
+        shouldBe result Nothing)
+
+iterators :: Spec
+iterators = pure ()
 
 compression :: Spec
 compression =
