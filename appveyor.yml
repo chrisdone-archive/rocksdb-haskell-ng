@@ -18,7 +18,7 @@ before_test:
 
 # Install openssl
 - ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
-- ps: Start-Process "Win64OpenSSL-1_0_2j.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
+- ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
 
 # Install rocksdb
 - git clone https://github.com/facebook/rocksdb.git
