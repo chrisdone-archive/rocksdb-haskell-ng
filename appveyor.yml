@@ -17,16 +17,17 @@ before_test:
 - 7z x stack.zip stack.exe
 
 # Install openssl
+- ps: Install-Package RocksDbNative -Version 5.4.6.10
 - ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
 - ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
 
 # Install rocksdb
-- git clone https://github.com/facebook/rocksdb.git
-- mkdir rocksdb\build
-- cd rocksdb\build
-- cmake -G "Visual Studio 14 2015 Win64" -DOPTDBG=1 -DXPRESS=1 ..
-- msbuild rocksdb.sln /p:Configuration=Release /m:4
-- cd ..\..
+# - git clone https://github.com/facebook/rocksdb.git
+# - mkdir rocksdb\build
+# - cd rocksdb\build
+# - cmake -G "Visual Studio 14 2015 Win64" -DOPTDBG=1 -DXPRESS=1 ..
+# - msbuild rocksdb.sln /p:Configuration=Release /m:4
+# - cd ..\..
 
 test_script:
   - stack setup
