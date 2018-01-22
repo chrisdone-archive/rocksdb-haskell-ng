@@ -105,7 +105,7 @@ defaultOptions fp =
   Options
   { optionsCreateIfMissing = False
   , optionsFilePath = fp
-  , optionsCompression = NoCompression
+  , optionsCompression = SnappyCompression
   }
 
 defaultWriteOptions :: WriteOptions
