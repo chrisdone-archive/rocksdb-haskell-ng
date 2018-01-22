@@ -24,7 +24,32 @@ spec :: Spec
 spec = do
   describe "Open/create/close" open
   describe "Get/put" getput
+  describe "Compression" compression
   describe "Obscure conditions" obscure
+
+compression :: Spec
+compression =
+  sequence_
+    [ it
+      ("Get/put with " ++ show c)
+      (do let key = "some key"
+              val = "Hello, World!"
+          result <-
+            withTempDirCleanedUp
+              (\dir -> do
+                 dbh <-
+                   Rocks.open
+                     ((Rocks.defaultOptions (dir </> "demo.db"))
+                      { Rocks.optionsCreateIfMissing = True
+                      , Rocks.optionsCompression = c
+                      })
+                 Rocks.put dbh Rocks.defaultWriteOptions key val
+                 v <- Rocks.get dbh Rocks.defaultReadOptions key
+                 Rocks.close dbh
+                 pure v)
+          shouldBe result (Just val))
+    | c <- [minBound .. maxBound]
+    ]
 
 getput :: Spec
 getput = do

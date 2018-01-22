@@ -62,7 +62,7 @@ data Compression
   = NoCompression
   | SnappyCompression
   | ZlibCompression
-  deriving (Eq, Show)
+  deriving (Eq, Show, Enum, Bounded)
 
 data WriteOptions = WriteOptions {}
 
@@ -142,6 +142,9 @@ open config =
                   c_rocksdb_options_set_create_if_missing
                     optsPtr
                     (optionsCreateIfMissing config)
+                  c_rocksdb_options_set_compression
+                    optsPtr
+                    (fromIntegral (fromEnum (optionsCompression config)))
                   dbhPtr <-
                     bracket
                       (replaceEncoding config)
@@ -608,3 +611,6 @@ foreign import ccall safe "rocksdb/c.h rocksdb_iter_key"
 
 foreign import ccall safe "rocksdb/c.h rocksdb_iter_value"
   c_rocksdb_iter_value :: Ptr CIterator -> Ptr CSize -> IO CString
+
+foreign import ccall safe "rocksdb/c.h rocksdb_options_set_compression"
+  c_rocksdb_options_set_compression :: Ptr COptions -> CInt -> IO ()
