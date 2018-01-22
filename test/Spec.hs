@@ -98,7 +98,89 @@ delete =
         shouldBe result Nothing)
 
 iterators :: Spec
-iterators = pure ()
+iterators = do
+  it
+    "Invalid iterator release"
+    (shouldThrow
+       (withTempDirCleanedUp
+          (\dir -> do
+             dbh <-
+               Rocks.open
+                 ((Rocks.defaultOptions (dir </> "demo.db"))
+                  {Rocks.optionsCreateIfMissing = True})
+             iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+             Rocks.close dbh
+             Rocks.releaseIter iterator))
+       (== Rocks.DatabaseIsClosed "releaseIter"))
+  it
+    "Used iterator after release"
+    (shouldThrow
+       (withTempDirCleanedUp
+          (\dir -> do
+             dbh <-
+               Rocks.open
+                 ((Rocks.defaultOptions (dir </> "demo.db"))
+                  {Rocks.optionsCreateIfMissing = True})
+             finally
+               (do iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+                   Rocks.releaseIter iterator
+                   _ <- Rocks.iterEntry iterator
+                   pure ())
+               (Rocks.close dbh)))
+       (== Rocks.IteratorIsClosed "iterEntry"))
+  it
+    "Valid iterator release"
+    (do r <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+               Rocks.releaseIter iterator
+               Rocks.close dbh)
+        shouldBe r ())
+  it
+    "No iterator release"
+    (do r <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               _ <- Rocks.createIter dbh Rocks.defaultReadOptions
+               Rocks.close dbh)
+        shouldBe r ())
+  it
+    "Iterator after batch"
+    (do let vals = [("k1", "foo"), ("k2", "bar")]
+        result <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               Rocks.write
+                 dbh
+                 Rocks.defaultWriteOptions
+                 (map (uncurry Rocks.Put) vals)
+               iterator <- Rocks.createIter dbh Rocks.defaultReadOptions
+               Rocks.iterSeek iterator "k1"
+               let loop = do
+                     mv <- Rocks.iterEntry iterator
+                     case mv of
+                       Just v -> do
+                         Rocks.iterNext iterator
+                         fmap (v :) loop
+                       Nothing -> pure []
+               vs <- loop
+               Rocks.releaseIter iterator
+               Rocks.close dbh
+               pure vs)
+        shouldBe result vals)
 
 compression :: Spec
 compression =
