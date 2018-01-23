@@ -266,30 +266,33 @@ get dbh readOpts key =
                  (\vlen_ptr ->
                     withReadOptions
                       readOpts
-                      (\optsPtr -> do
-                         val_ptr <-
-                           assertNotError
-                             "get"
-                             (c_rocksdb_get
-                                dbPtr
-                                optsPtr
-                                key_ptr
-                                (fromIntegral klen)
-                                vlen_ptr)
-                         vlen <- peek vlen_ptr
-                         -- On Linux/OS X this is fine, and from
-                         -- Facebook's example we are allowed to
-                         -- re-use the string and must free it.
-                         -- <https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53>
-                         -- But on Windows this appears to cause an
-                         -- access violation.
-                         !bs <- copyByteStringMaybe val_ptr vlen
-                         -- Apparently we should specifically use
-                         -- rocksdb_free according to this Facebook file:
-                         -- <https://github.com/facebook/rocksdb/blob/master/include/rocksdb/c.h#L1526>
-                         -- I tried a regular free() and it causes an access violation on Windows.
-                         c_rocksdb_free val_ptr
-                         pure bs)))))
+                      (\optsPtr ->
+                         uninterruptibleMask_
+                           -- These operations are wrapped in
+                           -- uninterruptible mask to avoid memory
+                           -- leaks in the case of an async
+                           -- exception. This is fine because:
+                           --
+                           -- 1. Foreign function calls are already not interruptible.
+                           -- 2. Everything from Foreign.* is not interruptible.
+                           -- 3. By re-using val_ptr, we avoid copying, which is a nice speed-up.
+                           (do val_ptr <-
+                                 assertNotError
+                                   "get"
+                                   (c_rocksdb_get
+                                      dbPtr
+                                      optsPtr
+                                      key_ptr
+                                      (fromIntegral klen)
+                                      vlen_ptr)
+                               if val_ptr == nullPtr
+                                 then return Nothing
+                                 else do
+                                   fptr <-
+                                     newForeignPtr c_rocksdb_free_ptr val_ptr
+                                   len <- peek vlen_ptr
+                                   let !bs = PS fptr 0 (fromIntegral len)
+                                   pure (Just bs)))))))
 
 -- | Write a batch of operations atomically.
 write :: MonadIO m => DB -> WriteOptions -> [BatchOp] -> m ()
@@ -564,7 +567,7 @@ foreign import ccall safe "rocksdb/c.h rocksdb_get"
                 -> CString -> CSize
                 -> Ptr CSize -- ^ Output length.
                 -> Ptr CString
-                -> IO CString
+                -> IO (Ptr Word8)
 
 foreign import ccall safe "rocksdb/c.h rocksdb_writeoptions_create"
   c_rocksdb_writeoptions_create :: IO (Ptr CWriteOptions)
@@ -632,5 +635,5 @@ foreign import ccall safe "rocksdb/c.h rocksdb_iter_value"
 foreign import ccall safe "rocksdb/c.h rocksdb_options_set_compression"
   c_rocksdb_options_set_compression :: Ptr COptions -> CInt -> IO ()
 
-foreign import ccall safe "rocksdb/c.h rocksdb_free"
-  c_rocksdb_free :: Ptr a -> IO ()
+foreign import ccall safe "rocksdb/c.h &rocksdb_free"
+  c_rocksdb_free_ptr :: FunPtr (Ptr a -> IO ())
