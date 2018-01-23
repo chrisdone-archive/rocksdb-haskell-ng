@@ -45,3 +45,9 @@ test_script:
       --extra-lib-dirs="C:\xz_extracted\bin_x86-64"
       --extra-include-dirs="%WORK_DIR%\rocksdb\include"
       --extra-lib-dirs="%WORK_DIR%"
+
+init:
+  - ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
+on_finish:
+  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
