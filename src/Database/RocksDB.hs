@@ -283,7 +283,12 @@ get dbh readOpts key =
                          -- <https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53>
                          -- But on Windows this appears to cause an
                          -- access violation.
-                         copyByteStringMaybe val_ptr vlen)))))
+                         !bs <- copyByteStringMaybe val_ptr vlen
+                         -- We apparently still have responsibility to
+                         -- free this, but we have to do it now, it
+                         -- seems.
+                         free val_ptr
+                         pure bs)))))
 
 -- | Write a batch of operations atomically.
 write :: MonadIO m => DB -> WriteOptions -> [BatchOp] -> m ()
