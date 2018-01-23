@@ -277,7 +277,12 @@ get dbh readOpts key =
                                 (fromIntegral klen)
                                 vlen_ptr)
                          vlen <- peek vlen_ptr
-                         adoptByteStringMaybe val_ptr vlen)))))
+                         -- On Linux/OS X this is fine, and from
+                         -- Facebook's example we are allowed to
+                         -- re-use the string and must free it. But on
+                         -- Windows this appears to cause an access
+                         -- violation.
+                         copyByteStringMaybe val_ptr vlen)))))
 
 -- | Write a batch of operations atomically.
 write :: MonadIO m => DB -> WriteOptions -> [BatchOp] -> m ()
@@ -478,24 +483,6 @@ withFilePath = withCString
 # else
 withFilePath = GHC.withCString GHC.utf8
 # endif
-
--- | Adopt ownership of the string given to us by the C library.
---
--- Below: we as callers of the rocksDB C library
--- own the malloc'd string and we are supposed to
--- free it ourselves.
---
--- See facebook's example https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53
---
--- S.unsafeUseAsCStringLen re-uses with no copying
--- the C array and adds a free() finalizer.
---
--- If the string is NULL, just return Nothing.
-adoptByteStringMaybe :: CString -> CSize -> IO (Maybe ByteString)
-adoptByteStringMaybe val_ptr vlen =
-  if val_ptr == nullPtr
-    then return Nothing
-    else fmap Just (S.unsafePackMallocCStringLen (val_ptr, fromIntegral vlen))
 
 -- | Copy the given CString, because we can't adopt it.
 --
