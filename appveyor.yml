@@ -15,22 +15,14 @@ before_test:
 - xcopy /q /s /e /r /k /i /v /h /y "%APPVEYOR_BUILD_FOLDER%" "%WORK_DIR%"
 - cd "%WORK_DIR%"
 
-# Install openssl
-- ps: Start-FileDownload 'https://slproweb.com/download/Win64OpenSSL-1_1_0g.exe'
-- ps: Start-Process "Win64OpenSSL-1_1_0g.exe" -ArgumentList "/silent /verysilent /sp- /suppressmsgboxes" -Wait
-
 # Install stack
 - ps: Start-FileDownload http://www.stackage.org/stack/windows-x86_64 -FileName stack.zip
 - 7z x stack.zip stack.exe
 
 # Install rocksdb
-- git clone https://github.com/facebook/rocksdb.git --branch v4.13.5
+- git clone https://github.com/facebook/rocksdb.git --branch v4.13.5 --depth 1
 - ps: Start-FileDownload 'https://ci.appveyor.com/api/buildjobs/kbpteb8j55p6sa2m/artifacts/rocksdb%2Fbuild%2FRocksdb.zip' -FileName rocksdb.zip
 - 7z x rocksdb.zip
-
-# Install liblzma/xz
-- ps: Start-FileDownload https://tukaani.org/xz/xz-5.2.3-windows.zip -Filename xz-5.2.3-windows.zip
-- 7z -oC:\xz_extracted x xz-5.2.3-windows.zip
 
 test_script:
   - cd "%WORK_DIR%"
@@ -39,10 +31,6 @@ test_script:
       -j 2
       --no-terminal
       --local-bin-path %SYSTEMROOT%\system32
-      --extra-include-dirs="C:\OpenSSL-Win64-v102\include"
-      --extra-lib-dirs="C:\OpenSSL-Win64-v102"
-      --extra-include-dirs="C:\xz_extracted\include"
-      --extra-lib-dirs="C:\xz_extracted\bin_x86-64"
       --extra-include-dirs="%WORK_DIR%\rocksdb\include"
       --extra-lib-dirs="%WORK_DIR%"
 
