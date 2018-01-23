@@ -284,10 +284,11 @@ get dbh readOpts key =
                          -- But on Windows this appears to cause an
                          -- access violation.
                          !bs <- copyByteStringMaybe val_ptr vlen
-                         -- We apparently still have responsibility to
-                         -- free this, but we have to do it now, it
-                         -- seems.
-                         free val_ptr
+                         -- Apparently we should specifically use
+                         -- rocksdb_free according to this Facebook file:
+                         -- <https://github.com/facebook/rocksdb/blob/master/include/rocksdb/c.h#L1526>
+                         -- I tried a regular free() and it causes an access violation on Windows.
+                         c_rocksdb_free val_ptr
                          pure bs)))))
 
 -- | Write a batch of operations atomically.
@@ -630,3 +631,6 @@ foreign import ccall safe "rocksdb/c.h rocksdb_iter_value"
 
 foreign import ccall safe "rocksdb/c.h rocksdb_options_set_compression"
   c_rocksdb_options_set_compression :: Ptr COptions -> CInt -> IO ()
+
+foreign import ccall safe "rocksdb/c.h rocksdb_free"
+  c_rocksdb_free :: Ptr a -> IO ()
