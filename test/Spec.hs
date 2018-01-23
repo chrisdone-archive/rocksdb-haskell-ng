@@ -249,7 +249,7 @@ iterators = do
 compression :: Spec
 compression =
   sequence_
-    [ it
+    [ itPendingWindows
       ("Get/put with " ++ show c)
       (do let key = "some key"
               val = "Hello, World!"
@@ -269,6 +269,14 @@ compression =
           shouldBe result (Just val))
     | c <- [minBound .. maxBound]
     ]
+
+#if defined(mingw32_HOST_OS)
+itPendingWindows :: Example a => String -> a -> SpecWith ()
+itPendingWindows l _ = it l (pendingWith "No Windows support yet.")
+#else
+itPendingWindows :: Example a => String -> a -> SpecWith (Arg a)
+itPendingWindows l m = it l m
+#endif
 
 getput :: Spec
 getput = do
