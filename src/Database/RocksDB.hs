@@ -279,9 +279,10 @@ get dbh readOpts key =
                          vlen <- peek vlen_ptr
                          -- On Linux/OS X this is fine, and from
                          -- Facebook's example we are allowed to
-                         -- re-use the string and must free it. But on
-                         -- Windows this appears to cause an access
-                         -- violation.
+                         -- re-use the string and must free it.
+                         -- <https://github.com/facebook/rocksdb/blob/master/examples/c_simple_example.c#L53>
+                         -- But on Windows this appears to cause an
+                         -- access violation.
                          copyByteStringMaybe val_ptr vlen)))))
 
 -- | Write a batch of operations atomically.
