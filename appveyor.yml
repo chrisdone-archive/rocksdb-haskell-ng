@@ -28,7 +28,7 @@ test_script:
   - cd "%WORK_DIR%"
   - stack --verbosity warn setup --no-reinstall > nul
   - stack test
-      -j 2
+      -j 1
       --no-terminal
       --local-bin-path %SYSTEMROOT%\system32
       --extra-include-dirs="%WORK_DIR%\rocksdb\include"
