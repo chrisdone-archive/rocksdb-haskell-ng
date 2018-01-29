@@ -8,8 +8,8 @@
 -- | A safe binding to RocksDB.
 
 module Database.RocksDB
-    -- * Basic Functions
-  ( open
+  ( -- * Basic functions
+    open
   , defaultOptions
   , Options(..)
   , DB
