@@ -190,17 +190,12 @@ open config =
 close :: MonadIO m => DB -> m ()
 close dbh =
   liftIO
-    (modifyMVar_
-       (dbVar dbh)
-       (\mfptr -> do
-          maybe (evaluate ()) finalizeForeignPtr mfptr
-          -- Previous line: The fptr would be finalized _eventually_, so
-          -- no memory leaks. But calling @close@ indicates you want to
-          -- release the resources right now.
-          --
-          -- Also, a foreign pointer's finalizer is ran and then deleted,
-          -- so you can't double-free.
-          pure Nothing))
+    (do mfptr <- modifyMVar (dbVar dbh) (pure . (Nothing, ))
+        -- If an async exception comes after here, that's a pity
+        -- because we wanted to free the file now. But with regards to
+        -- safety, the finalizers will take care of closing
+        -- eventually.
+        maybe (evaluate ()) finalizeForeignPtr mfptr)
 
 -- | Delete value at @key@.
 delete :: MonadIO m => DB -> WriteOptions -> ByteString -> m ()
