@@ -64,14 +64,17 @@ data Options = Options
   , optionsCompression :: !Compression
   }
 
+-- | Data compression mode.
 data Compression
   = NoCompression
   | SnappyCompression
   | ZlibCompression
   deriving (Enum, Bounded, Show)
 
+-- | Options for writing data to the database.
 data WriteOptions = WriteOptions {}
 
+-- | Options for reading data to the database.
 data ReadOptions = ReadOptions {}
 
 -- | Batch operation
@@ -91,7 +94,7 @@ data Iterator = Iterator
   { iteratorDB :: !DB
   , iteratorRef :: !(IORef (Maybe (Ptr CIterator)))
     -- ^ This field is not protected; operations in an Iterator get a
-    -- lock on the @DB@ with 'withDBPtr', making access to this
+    -- lock on the @DB@ with @withDBPtr@, making access to this
     -- safe. Without a database pointer, an iterator pointer is freed
     -- and no longer useful.
     --
@@ -113,6 +116,7 @@ instance Exception RocksDBException
 --------------------------------------------------------------------------------
 -- Defaults
 
+-- | Default connection options.
 defaultOptions :: FilePath -> Options
 defaultOptions fp =
   Options
@@ -121,9 +125,11 @@ defaultOptions fp =
   , optionsCompression = NoCompression
   }
 
+-- | Default writing options.
 defaultWriteOptions :: WriteOptions
 defaultWriteOptions = WriteOptions {}
 
+-- | Default reading options.
 defaultReadOptions :: ReadOptions
 defaultReadOptions = ReadOptions {}
 
@@ -368,7 +374,12 @@ releaseIter iterator =
                       atomicModifyIORef' (iteratorRef iterator) (Nothing, )
                     maybe (pure ()) c_rocksdb_iter_destroy mptr)))))
 
-iterSeek :: MonadIO m => Iterator -> ByteString -> m ()
+-- | Seek to the given key in the iterator.
+iterSeek ::
+     MonadIO m
+  => Iterator
+  -> ByteString -- ^ Key.
+  -> m ()
 iterSeek iter key =
   withIterPtr
     iter
@@ -407,6 +418,7 @@ iterEntry iter =
            pure ((,) <$> mkey <*> mval)
          else pure Nothing)
 
+-- | Go to the next item in the iterator.
 iterNext :: MonadIO m => Iterator -> m ()
 iterNext iter =
   withIterPtr iter "iterNext" (\iterPtr -> c_rocksdb_iter_next iterPtr)
