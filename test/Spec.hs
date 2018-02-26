@@ -10,6 +10,7 @@ import           Control.DeepSeq
 import           Control.Exception
 import           Control.Monad.IO.Class
 import           Data.Bifunctor
+import           Data.Functor
 import qualified Database.RocksDB as Rocks
 import           System.Directory
 import           System.FilePath
@@ -28,6 +29,7 @@ spec = do
   describe "Delete" delete
   describe "Compression" compression
   describe "Iterators" iterators
+  describe "Snapshots" snapshots
   describe "Obscure conditions" obscure
 
 batch :: Spec
@@ -245,6 +247,99 @@ iterators = do
                Rocks.close dbh
                pure vs)
         shouldBe result vals)
+
+snapshots :: Spec
+snapshots = do
+  it
+    "Invalid snapshot release"
+    (shouldThrow
+       (withTempDirCleanedUp
+          (\dir -> do
+             dbh <-
+               Rocks.open
+                 ((Rocks.defaultOptions (dir </> "demo.db"))
+                  {Rocks.optionsCreateIfMissing = True})
+             snapshot <- Rocks.createSnapshot dbh
+             Rocks.close dbh
+             Rocks.releaseSnapshot snapshot))
+       (== Rocks.DatabaseIsClosed "releaseSnapshot"))
+  it
+    "Used snapshot after release"
+    (shouldThrow
+       (withTempDirCleanedUp
+          (\dir -> do
+             dbh <-
+               Rocks.open
+                 ((Rocks.defaultOptions (dir </> "demo.db"))
+                  {Rocks.optionsCreateIfMissing = True})
+             finally
+               (do snapshot <- Rocks.createSnapshot dbh
+                   Rocks.releaseSnapshot snapshot
+                   void
+                     (Rocks.get
+                        dbh
+                        Rocks.defaultReadOptions
+                        {Rocks.readOptionsSnapshot = Just snapshot}
+                        "key"))
+               (Rocks.close dbh)))
+       (== Rocks.SnapshotIsClosed "withReadOptions"))
+  it
+    "Valid snapshot release"
+    (do r <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               snapshot <- Rocks.createSnapshot dbh
+               Rocks.releaseSnapshot snapshot
+               Rocks.close dbh)
+        shouldBe r ())
+  it
+    "No snapshot release"
+    (do r <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               _ <- Rocks.createSnapshot dbh
+               Rocks.close dbh)
+        shouldBe r ())
+  it
+    "Read operations only see data from the snapshot"
+    (do r <-
+          withTempDirCleanedUp
+            (\dir -> do
+               dbh <-
+                 Rocks.open
+                   ((Rocks.defaultOptions (dir </> "demo.db"))
+                    {Rocks.optionsCreateIfMissing = True})
+               let key = "key"
+               Rocks.put dbh Rocks.defaultWriteOptions key "Hello"
+               snapshot <- Rocks.createSnapshot dbh
+               Rocks.put dbh Rocks.defaultWriteOptions key "World!"
+               snapshotVal <-
+                 Rocks.get
+                   dbh
+                   Rocks.defaultReadOptions
+                   {Rocks.readOptionsSnapshot = Just snapshot}
+                   key
+               regularVal <- Rocks.get dbh Rocks.defaultReadOptions key
+               Rocks.delete dbh Rocks.defaultWriteOptions key
+               snapshotVal2 <-
+                 Rocks.get
+                   dbh
+                   Rocks.defaultReadOptions
+                   {Rocks.readOptionsSnapshot = Just snapshot}
+                   key
+               regularVal2 <- Rocks.get dbh Rocks.defaultReadOptions key
+               Rocks.releaseSnapshot snapshot
+               Rocks.close dbh
+               pure (snapshotVal, regularVal, snapshotVal2, regularVal2))
+        shouldBe r (Just "Hello",Just "World!",Just "Hello", Nothing))
 
 compression :: Spec
 compression =
