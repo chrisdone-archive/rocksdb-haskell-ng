@@ -494,8 +494,8 @@ withIterPtr iter label f =
                 Nothing -> throwIO (IteratorIsClosed label)
                 Just it -> f it)))
 
--- | Do something with the iterator. This only succeeds if the db
--- iterator is not released. This function expects a locked database
+-- | Do something with the snapshot. This only succeeds if the db
+-- snapshot is not released. This function expects a locked database
 -- handle, via @withDBPtr@.
 withSnapshotPtr :: MonadIO m => Ptr CDB -> Snapshot -> String -> (Ptr CSnapshot -> IO a) -> m a
 withSnapshotPtr _ snapshot label f =
