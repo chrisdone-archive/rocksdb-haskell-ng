@@ -35,6 +35,7 @@ test_script:
       --extra-lib-dirs="%WORK_DIR%"
 
 # Uncomment/comment these two lines if you need to RPD into the VM to debug something
+# Tweak
 
 init:
   - ps: iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
