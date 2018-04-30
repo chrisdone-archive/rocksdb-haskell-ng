@@ -52,9 +52,7 @@ import           Data.Typeable
 import           Foreign
 import           Foreign.C
 #ifndef mingw32_HOST_OS
-import qualified GHC.Foreign as GHC
 #endif
-import qualified GHC.IO.Encoding as GHC
 import           System.Directory
 
 --------------------------------------------------------------------------------
@@ -168,7 +166,7 @@ defaultReadOptions = ReadOptions {readOptionsSnapshot = Nothing}
 open :: MonadIO m => Options -> m DB
 open config =
   liftIO
-    (do withFilePath
+    (do withCString
           (optionsFilePath config)
           (\pathPtr ->
              withOptions
@@ -180,20 +178,16 @@ open config =
                     optsPtr
                     (fromIntegral (fromEnum (optionsCompression config)))
                   dbhPtr <-
-                    bracket
-                      (replaceEncoding config)
-                      restoreEncoding
-                      (const
-                         (do when
-                               (optionsCreateIfMissing config)
-                               (createDirectoryIfMissing
-                                  True
-                                  (optionsFilePath config))
-                             v <-
-                               assertNotError
-                                 "c_rocksdb_open"
-                                 (c_rocksdb_open optsPtr pathPtr)
-                             pure v))
+                    (do when
+                          (optionsCreateIfMissing config)
+                          (createDirectoryIfMissing
+                             True
+                             (optionsFilePath config))
+                        v <-
+                          assertNotError
+                            "c_rocksdb_open"
+                            (c_rocksdb_open optsPtr pathPtr)
+                        pure v)
                   dbhFptr <- newForeignPtr c_rocksdb_close_funptr dbhPtr
                   dbRef <- newMVar (Just dbhFptr)
                   pure (DB {dbVar = dbRef}))))
@@ -552,30 +546,6 @@ withReadOptions dbPtr ReadOptions {readOptionsSnapshot = msnapshot} f =
               (c_rocksdb_readoptions_set_snapshot opts))
          msnapshot
        f opts)
-
-replaceEncoding :: Options -> IO GHC.TextEncoding
-#ifdef mingw32_HOST_OS
-replaceEncoding _ = GHC.getFileSystemEncoding
-#else
-replaceEncoding opts = do
-  oldenc <- GHC.getFileSystemEncoding
-  when (optionsCreateIfMissing opts) (GHC.setFileSystemEncoding GHC.utf8)
-  pure oldenc
-#endif
-
-restoreEncoding :: GHC.TextEncoding -> IO ()
-#ifdef mingw32_HOST_OS
-restoreEncoding _ = pure ()
-#else
-restoreEncoding = GHC.setFileSystemEncoding
-#endif
-
-withFilePath :: FilePath -> (CString -> IO a) -> IO a
-# ifdef mingw32_HOST_OS
-withFilePath = withCString
-# else
-withFilePath = GHC.withCString GHC.utf8
-# endif
 
 -- | Copy the given CString, because we can't adopt it.
 --
